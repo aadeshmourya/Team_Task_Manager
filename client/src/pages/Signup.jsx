@@ -38,7 +38,7 @@ function Signup() {
         email: formData.email.trim().toLowerCase(),
       };
 
-      await axios.post("http://localhost:5000/api/auth/signup", payload);
+      await axios.post(`${import.meta.env.VITE_API_URL}/api/...`, payload);
 
       navigate("/", {
         state: {

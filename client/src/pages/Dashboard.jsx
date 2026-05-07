@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import axios from "axios";
 import { useNavigate } from "react-router-dom";
 import {
@@ -33,7 +33,7 @@ import {
 } from "../components/ui";
 import { cn } from "../utils/cn";
 
-const API_URL = "http://localhost:5000/api";
+const API_URL = `${import.meta.env.VITE_API_URL}/api`;
 const OVERDUE_CUTOFF = Date.now();
 
 const emptyProjectForm = {
@@ -123,11 +123,11 @@ function StatCard({ title, value, icon: Icon, tone = "slate" }) {
   );
 }
 
-function Sidebar({ user, onLogout }) {
+function Sidebar({ user, activeSection, onSectionChange, onLogout }) {
   const navItems = [
-    { icon: LayoutDashboard, label: "Overview", active: true },
-    { icon: FolderKanban, label: "Projects" },
-    { icon: ClipboardList, label: "Tasks" },
+    { id: "overview", icon: LayoutDashboard, label: "Overview" },
+    { id: "projects", icon: FolderKanban, label: "Projects" },
+    { id: "tasks", icon: ClipboardList, label: "Tasks" },
   ];
 
   return (
@@ -145,21 +145,27 @@ function Sidebar({ user, onLogout }) {
       </div>
 
       <nav className="mt-9 space-y-1">
-        {navItems.map(({ icon: Icon, label, active }) => (
+        {navItems.map(({ id, icon: Icon, label }) => {
+          const isActive = activeSection === id;
+
+          return (
           <button
             key={label}
+            aria-current={isActive ? "page" : undefined}
             className={cn(
               "flex w-full items-center gap-3 rounded-md px-3 py-2.5 text-sm font-semibold transition",
-              active
+              isActive
                 ? "bg-slate-950 text-white"
                 : "text-slate-600 hover:bg-slate-100"
             )}
+            onClick={() => onSectionChange(id)}
             type="button"
           >
             <Icon className="h-4 w-4" aria-hidden="true" />
             {label}
           </button>
-        ))}
+          );
+        })}
       </nav>
 
       <div className="mt-auto rounded-lg border border-slate-200 bg-slate-50 p-4">
@@ -370,6 +376,11 @@ function Dashboard() {
   const [isLoading, setIsLoading] = useState(true);
   const [isCreatingProject, setIsCreatingProject] = useState(false);
   const [isCreatingTask, setIsCreatingTask] = useState(false);
+  const [activeSection, setActiveSection] = useState("overview");
+
+  const overviewRef = useRef(null);
+  const projectsRef = useRef(null);
+  const tasksRef = useRef(null);
 
   const authConfig = useMemo(
     () => ({
@@ -388,6 +399,21 @@ function Dashboard() {
     setNotice({
       type: "error",
       message: error.response?.data?.message || fallback,
+    });
+  }, []);
+
+  const handleSectionChange = useCallback((section) => {
+    setActiveSection(section);
+
+    const sections = {
+      overview: overviewRef,
+      projects: projectsRef,
+      tasks: tasksRef,
+    };
+
+    sections[section]?.current?.scrollIntoView({
+      behavior: "smooth",
+      block: "start",
     });
   }, []);
 
@@ -608,7 +634,12 @@ function Dashboard() {
 
   return (
     <div className="min-h-screen bg-slate-100 text-slate-950 lg:flex">
-      <Sidebar user={user} onLogout={logout} />
+      <Sidebar
+        user={user}
+        activeSection={activeSection}
+        onSectionChange={handleSectionChange}
+        onLogout={logout}
+      />
 
       <main className="min-w-0 flex-1">
         <header className="border-b border-slate-200 bg-white px-5 py-5 sm:px-8">
@@ -666,7 +697,10 @@ function Dashboard() {
             </div>
           )}
 
-          <section className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-5">
+          <section
+            ref={overviewRef}
+            className="scroll-mt-6 grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-5"
+          >
             {stats.map((stat) => (
               <StatCard key={stat.title} {...stat} />
             ))}
@@ -822,7 +856,7 @@ function Dashboard() {
             </Panel>
           </section>
 
-          <section className="mt-10">
+          <section ref={projectsRef} className="mt-10 scroll-mt-6">
             <div className="mb-5 flex items-center justify-between gap-4">
               <div>
                 <p className="text-sm font-semibold uppercase text-slate-500">
@@ -868,7 +902,7 @@ function Dashboard() {
             )}
           </section>
 
-          <section className="mt-10">
+          <section ref={tasksRef} className="mt-10 scroll-mt-6">
             <div className="mb-5 flex items-center justify-between gap-4">
               <div>
                 <p className="text-sm font-semibold uppercase text-slate-500">
