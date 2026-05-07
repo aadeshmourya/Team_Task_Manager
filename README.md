@@ -61,7 +61,7 @@ Task Flow/
 Create a `server/.env` file:
 
 ```env
-MONGO_URI=mongodb://127.0.0.1:27017/task-flow
+MONGO_URI=mongo_url_connection
 JWT_SECRET=replace-with-a-long-random-secret
 PORT=5000
 ```
