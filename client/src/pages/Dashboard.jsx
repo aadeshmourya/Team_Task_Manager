@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import axios from "axios";
 import { useNavigate } from "react-router-dom";
 import {
@@ -12,12 +12,14 @@ import {
   LayoutDashboard,
   ListTodo,
   LogOut,
+  Menu,
   Plus,
   Send,
   Trash2,
   UserPlus,
   UserMinus,
   UsersRound,
+  X,
 } from "lucide-react";
 
 import {
@@ -61,6 +63,12 @@ const statusTone = {
   "In Progress": "blue",
   "To Do": "slate",
 };
+
+const navItems = [
+  { id: "overview", icon: LayoutDashboard, label: "Overview" },
+  { id: "projects", icon: FolderKanban, label: "Projects" },
+  { id: "tasks", icon: ClipboardList, label: "Tasks" },
+];
 
 function getStoredUser() {
   try {
@@ -123,43 +131,66 @@ function StatCard({ title, value, icon: Icon, tone = "slate" }) {
   );
 }
 
-function Sidebar({ user, onLogout }) {
-  const navItems = [
-    { icon: LayoutDashboard, label: "Overview", active: true },
-    { icon: FolderKanban, label: "Projects" },
-    { icon: ClipboardList, label: "Tasks" },
-  ];
-
+function Sidebar({
+  user,
+  onLogout,
+  activeSection,
+  onNavigate,
+  isMobile = false,
+  onClose,
+}) {
   return (
-    <aside className="hidden h-screen w-72 shrink-0 flex-col border-r border-slate-200 bg-white px-5 py-6 lg:flex">
-      <div className="flex items-center gap-3">
-        <div className="flex h-11 w-11 items-center justify-center rounded-md bg-slate-950 text-white">
-          <CheckCircle2 className="h-6 w-6" aria-hidden="true" />
+    <aside
+      className={cn(
+        "h-screen w-72 shrink-0 flex-col border-r border-slate-200 bg-white px-5 py-6",
+        isMobile ? "flex max-w-[85vw] shadow-xl" : "hidden lg:sticky lg:top-0 lg:flex"
+      )}
+    >
+      <div className="flex items-center justify-between gap-3">
+        <div className="flex min-w-0 items-center gap-3">
+          <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-md bg-slate-950 text-white">
+            <CheckCircle2 className="h-6 w-6" aria-hidden="true" />
+          </div>
+          <div className="min-w-0">
+            <p className="truncate text-lg font-bold text-slate-950">TaskFlow</p>
+            <p className="text-xs font-medium uppercase text-slate-500">
+              Workspace
+            </p>
+          </div>
         </div>
-        <div>
-          <p className="text-lg font-bold text-slate-950">TaskFlow</p>
-          <p className="text-xs font-medium uppercase text-slate-500">
-            Workspace
-          </p>
-        </div>
+
+        {isMobile && (
+          <IconButton
+            label="Close navigation"
+            icon={X}
+            variant="ghost"
+            onClick={onClose}
+          />
+        )}
       </div>
 
-      <nav className="mt-9 space-y-1">
-        {navItems.map(({ icon: Icon, label, active }) => (
-          <button
-            key={label}
-            className={cn(
-              "flex w-full items-center gap-3 rounded-md px-3 py-2.5 text-sm font-semibold transition",
-              active
-                ? "bg-slate-950 text-white"
-                : "text-slate-600 hover:bg-slate-100"
-            )}
-            type="button"
-          >
-            <Icon className="h-4 w-4" aria-hidden="true" />
-            {label}
-          </button>
-        ))}
+      <nav className="mt-9 space-y-1" aria-label="Dashboard sections">
+        {navItems.map(({ id, icon: Icon, label }) => {
+          const isActive = activeSection === id;
+
+          return (
+            <button
+              key={id}
+              className={cn(
+                "flex w-full items-center gap-3 rounded-md px-3 py-2.5 text-sm font-semibold transition",
+                isActive
+                  ? "bg-slate-950 text-white"
+                  : "text-slate-600 hover:bg-slate-100"
+              )}
+              onClick={() => onNavigate(id)}
+              type="button"
+              aria-current={isActive ? "page" : undefined}
+            >
+              <Icon className="h-4 w-4" aria-hidden="true" />
+              {label}
+            </button>
+          );
+        })}
       </nav>
 
       <div className="mt-auto rounded-lg border border-slate-200 bg-slate-50 p-4">
@@ -355,6 +386,7 @@ function TaskCard({ task, canDelete, canUpdateStatus, onStatusChange, onDelete }
 
 function Dashboard() {
   const navigate = useNavigate();
+  const sectionRefs = useRef({});
 
   const token = localStorage.getItem("token");
   const user = useMemo(() => getStoredUser(), []);
@@ -370,6 +402,8 @@ function Dashboard() {
   const [isLoading, setIsLoading] = useState(true);
   const [isCreatingProject, setIsCreatingProject] = useState(false);
   const [isCreatingTask, setIsCreatingTask] = useState(false);
+  const [activeSection, setActiveSection] = useState("overview");
+  const [isSidebarOpen, setIsSidebarOpen] = useState(false);
 
   const authConfig = useMemo(
     () => ({
@@ -431,6 +465,54 @@ function Dashboard() {
     // eslint-disable-next-line react-hooks/set-state-in-effect
     fetchWorkspace();
   }, [fetchWorkspace]);
+
+  useEffect(() => {
+    const observer = new IntersectionObserver(
+      (entries) => {
+        const visibleSection = entries
+          .filter((entry) => entry.isIntersecting)
+          .sort((left, right) => right.intersectionRatio - left.intersectionRatio)[0];
+
+        if (visibleSection) {
+          setActiveSection(visibleSection.target.id);
+        }
+      },
+      {
+        rootMargin: "-25% 0px -55% 0px",
+        threshold: [0.1, 0.35, 0.6],
+      }
+    );
+
+    navItems.forEach(({ id }) => {
+      const section = sectionRefs.current[id];
+
+      if (section) {
+        observer.observe(section);
+      }
+    });
+
+    return () => observer.disconnect();
+  }, []);
+
+  useEffect(() => {
+    if (!isSidebarOpen) return;
+
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+
+    const closeOnEscape = (event) => {
+      if (event.key === "Escape") {
+        setIsSidebarOpen(false);
+      }
+    };
+
+    window.addEventListener("keydown", closeOnEscape);
+
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      window.removeEventListener("keydown", closeOnEscape);
+    };
+  }, [isSidebarOpen]);
 
   const refreshTasksAndStats = useCallback(async () => {
     try {
@@ -568,6 +650,16 @@ function Dashboard() {
     navigate("/");
   };
 
+  const navigateToSection = (sectionId) => {
+    setActiveSection(sectionId);
+    setIsSidebarOpen(false);
+
+    sectionRefs.current[sectionId]?.scrollIntoView({
+      behavior: "smooth",
+      block: "start",
+    });
+  };
+
   const stats = [
     {
       title: "Total Tasks",
@@ -608,7 +700,38 @@ function Dashboard() {
 
   return (
     <div className="min-h-screen bg-slate-100 text-slate-950 lg:flex">
-      <Sidebar user={user} onLogout={logout} />
+      <Sidebar
+        user={user}
+        onLogout={logout}
+        activeSection={activeSection}
+        onNavigate={navigateToSection}
+      />
+
+      {isSidebarOpen && (
+        <div
+          className="fixed inset-0 z-50 lg:hidden"
+          role="dialog"
+          aria-modal="true"
+          aria-label="Navigation menu"
+        >
+          <button
+            type="button"
+            className="absolute inset-0 bg-slate-950/50"
+            aria-label="Close navigation"
+            onClick={() => setIsSidebarOpen(false)}
+          />
+          <div className="relative h-full">
+            <Sidebar
+              user={user}
+              onLogout={logout}
+              activeSection={activeSection}
+              onNavigate={navigateToSection}
+              isMobile
+              onClose={() => setIsSidebarOpen(false)}
+            />
+          </div>
+        </div>
+      )}
 
       <main className="min-w-0 flex-1">
         <header className="border-b border-slate-200 bg-white px-5 py-5 sm:px-8">
@@ -623,10 +746,17 @@ function Dashboard() {
             </div>
 
             <div className="flex items-center justify-between gap-3 lg:justify-end">
-              <div className="flex items-center gap-3 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2">
+              <IconButton
+                label="Open navigation"
+                icon={Menu}
+                onClick={() => setIsSidebarOpen(true)}
+                className="lg:hidden"
+              />
+
+              <div className="min-w-0 flex items-center gap-3 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2">
                 <Avatar name={user?.name} />
-                <div>
-                  <p className="text-sm font-semibold text-slate-950">
+                <div className="min-w-0">
+                  <p className="truncate text-sm font-semibold text-slate-950">
                     {user?.name || "User"}
                   </p>
                   <p className="capitalize text-xs font-medium text-slate-500">
@@ -666,163 +796,177 @@ function Dashboard() {
             </div>
           )}
 
-          <section className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-5">
-            {stats.map((stat) => (
-              <StatCard key={stat.title} {...stat} />
-            ))}
-          </section>
+          <section
+            id="overview"
+            ref={(section) => {
+              sectionRefs.current.overview = section;
+            }}
+            className="scroll-mt-6"
+          >
+            <section className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-5">
+              {stats.map((stat) => (
+                <StatCard key={stat.title} {...stat} />
+              ))}
+            </section>
 
-          <section className="mt-6 grid grid-cols-1 gap-6 xl:grid-cols-2">
-            <Panel title="Create Project" eyebrow="Projects">
-              <form onSubmit={createProject} className="space-y-4">
-                <TextInput
-                  label="Project title"
-                  type="text"
-                  placeholder="Website launch"
-                  value={projectForm.title}
-                  onChange={(e) =>
-                    setProjectForm({
-                      ...projectForm,
-                      title: e.target.value,
-                    })
-                  }
-                  required
-                />
-
-                <TextareaInput
-                  label="Description"
-                  placeholder="Scope, goals, or useful context"
-                  rows="4"
-                  value={projectForm.description}
-                  onChange={(e) =>
-                    setProjectForm({
-                      ...projectForm,
-                      description: e.target.value,
-                    })
-                  }
-                />
-
-                <Button
-                  type="submit"
-                  icon={Plus}
-                  disabled={isCreatingProject}
-                >
-                  {isCreatingProject ? "Creating" : "Create Project"}
-                </Button>
-              </form>
-            </Panel>
-
-            <Panel title="Create Task" eyebrow="Tasks">
-              <form onSubmit={createTask} className="space-y-4">
-                <TextInput
-                  label="Task title"
-                  type="text"
-                  placeholder="Prepare sprint notes"
-                  value={taskForm.title}
-                  onChange={(e) =>
-                    setTaskForm({
-                      ...taskForm,
-                      title: e.target.value,
-                    })
-                  }
-                  required
-                />
-
-                <TextareaInput
-                  label="Description"
-                  placeholder="Acceptance criteria or key details"
-                  rows="3"
-                  value={taskForm.description}
-                  onChange={(e) =>
-                    setTaskForm({
-                      ...taskForm,
-                      description: e.target.value,
-                    })
-                  }
-                />
-
-                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-                  <SelectInput
-                    label="Project"
-                    value={taskForm.project}
-                    onChange={(e) =>
-                      setTaskForm({
-                        ...taskForm,
-                        project: e.target.value,
-                        assignedTo: "",
-                      })
-                    }
-                    required
-                  >
-                    <option value="">Select project</option>
-                    {projects.map((project) => (
-                      <option key={project._id} value={project._id}>
-                        {project.title}
-                      </option>
-                    ))}
-                  </SelectInput>
-
-                  <SelectInput
-                    label="Assignee"
-                    value={taskForm.assignedTo}
-                    onChange={(e) =>
-                      setTaskForm({
-                        ...taskForm,
-                        assignedTo: e.target.value,
-                      })
-                    }
-                    required
-                    disabled={!taskForm.project}
-                    hint={
-                      taskForm.project
-                        ? "Only project members are shown."
-                        : "Select a project first."
-                    }
-                  >
-                    <option value="">Assign user</option>
-                    {assignableMembers.map((member) => (
-                      <option key={member._id} value={member._id}>
-                        {member.name}
-                      </option>
-                    ))}
-                  </SelectInput>
-
-                  <SelectInput
-                    label="Priority"
-                    value={taskForm.priority}
-                    onChange={(e) =>
-                      setTaskForm({
-                        ...taskForm,
-                        priority: e.target.value,
-                      })
-                    }
-                  >
-                    <option>Low</option>
-                    <option>Medium</option>
-                    <option>High</option>
-                  </SelectInput>
-
+            <section className="mt-6 grid grid-cols-1 gap-6 xl:grid-cols-2">
+              <Panel title="Create Project" eyebrow="Projects">
+                <form onSubmit={createProject} className="space-y-4">
                   <TextInput
-                    label="Due date"
-                    type="date"
-                    value={taskForm.dueDate}
+                    label="Project title"
+                    type="text"
+                    placeholder="Website launch"
+                    value={projectForm.title}
                     onChange={(e) =>
-                      setTaskForm({
-                        ...taskForm,
-                        dueDate: e.target.value,
+                      setProjectForm({
+                        ...projectForm,
+                        title: e.target.value,
+                      })
+                    }
+                    required
+                  />
+
+                  <TextareaInput
+                    label="Description"
+                    placeholder="Scope, goals, or useful context"
+                    rows="4"
+                    value={projectForm.description}
+                    onChange={(e) =>
+                      setProjectForm({
+                        ...projectForm,
+                        description: e.target.value,
                       })
                     }
                   />
-                </div>
 
-                <Button type="submit" icon={Send} disabled={isCreatingTask}>
-                  {isCreatingTask ? "Creating" : "Create Task"}
-                </Button>
-              </form>
-            </Panel>
+                  <Button
+                    type="submit"
+                    icon={Plus}
+                    disabled={isCreatingProject}
+                  >
+                    {isCreatingProject ? "Creating" : "Create Project"}
+                  </Button>
+                </form>
+              </Panel>
+
+              <Panel title="Create Task" eyebrow="Tasks">
+                <form onSubmit={createTask} className="space-y-4">
+                  <TextInput
+                    label="Task title"
+                    type="text"
+                    placeholder="Prepare sprint notes"
+                    value={taskForm.title}
+                    onChange={(e) =>
+                      setTaskForm({
+                        ...taskForm,
+                        title: e.target.value,
+                      })
+                    }
+                    required
+                  />
+
+                  <TextareaInput
+                    label="Description"
+                    placeholder="Acceptance criteria or key details"
+                    rows="3"
+                    value={taskForm.description}
+                    onChange={(e) =>
+                      setTaskForm({
+                        ...taskForm,
+                        description: e.target.value,
+                      })
+                    }
+                  />
+
+                  <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                    <SelectInput
+                      label="Project"
+                      value={taskForm.project}
+                      onChange={(e) =>
+                        setTaskForm({
+                          ...taskForm,
+                          project: e.target.value,
+                          assignedTo: "",
+                        })
+                      }
+                      required
+                    >
+                      <option value="">Select project</option>
+                      {projects.map((project) => (
+                        <option key={project._id} value={project._id}>
+                          {project.title}
+                        </option>
+                      ))}
+                    </SelectInput>
+
+                    <SelectInput
+                      label="Assignee"
+                      value={taskForm.assignedTo}
+                      onChange={(e) =>
+                        setTaskForm({
+                          ...taskForm,
+                          assignedTo: e.target.value,
+                        })
+                      }
+                      required
+                      disabled={!taskForm.project}
+                      hint={
+                        taskForm.project
+                          ? "Only project members are shown."
+                          : "Select a project first."
+                      }
+                    >
+                      <option value="">Assign user</option>
+                      {assignableMembers.map((member) => (
+                        <option key={member._id} value={member._id}>
+                          {member.name}
+                        </option>
+                      ))}
+                    </SelectInput>
+
+                    <SelectInput
+                      label="Priority"
+                      value={taskForm.priority}
+                      onChange={(e) =>
+                        setTaskForm({
+                          ...taskForm,
+                          priority: e.target.value,
+                        })
+                      }
+                    >
+                      <option>Low</option>
+                      <option>Medium</option>
+                      <option>High</option>
+                    </SelectInput>
+
+                    <TextInput
+                      label="Due date"
+                      type="date"
+                      value={taskForm.dueDate}
+                      onChange={(e) =>
+                        setTaskForm({
+                          ...taskForm,
+                          dueDate: e.target.value,
+                        })
+                      }
+                    />
+                  </div>
+
+                  <Button type="submit" icon={Send} disabled={isCreatingTask}>
+                    {isCreatingTask ? "Creating" : "Create Task"}
+                  </Button>
+                </form>
+              </Panel>
+            </section>
           </section>
 
-          <section className="mt-10">
+          <section
+            id="projects"
+            ref={(section) => {
+              sectionRefs.current.projects = section;
+            }}
+            className="mt-10 scroll-mt-6"
+          >
             <div className="mb-5 flex items-center justify-between gap-4">
               <div>
                 <p className="text-sm font-semibold uppercase text-slate-500">
@@ -868,7 +1012,13 @@ function Dashboard() {
             )}
           </section>
 
-          <section className="mt-10">
+          <section
+            id="tasks"
+            ref={(section) => {
+              sectionRefs.current.tasks = section;
+            }}
+            className="mt-10 scroll-mt-6"
+          >
             <div className="mb-5 flex items-center justify-between gap-4">
               <div>
                 <p className="text-sm font-semibold uppercase text-slate-500">
